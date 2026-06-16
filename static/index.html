@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>شرط‌بندی دوستانه - تست</title>
+<style>
+  body { font-family: Tahoma, Arial, sans-serif; background:#0f1115; color:#eee; max-width:480px; margin:0 auto; padding:16px; }
+  h2,h3 { color:#fff; }
+  .card { background:#1b1e26; border-radius:10px; padding:14px; margin-bottom:14px; }
+  input, select, button { width:100%; padding:10px; margin:6px 0; border-radius:6px; border:1px solid #333; background:#11131a; color:#eee; box-sizing:border-box; }
+  button { background:#2f6fed; border:none; cursor:pointer; font-weight:bold; }
+  .match-row { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #2a2d36; }
+  .balance { font-size:22px; color:#4ade80; font-weight:bold; }
+  small { color:#999; }
+</style>
+</head>
+<body>
+
+  <h2>🏆 شرط‌بندی دوستانه جام جهانی</h2>
+
+  <div id="login-box" class="card">
+    <p>برای شروع با تلگرام وارد شو:</p>
+    <!-- به جای YOUR_BOT_USERNAME یوزرنیم بات خودت رو بگذار (بدون @) -->
+    <script async src="https://telegram.org/js/telegram-widget.js?22"
+      data-telegram-login="YOUR_BOT_USERNAME"
+      data-size="large"
+      data-onauth="onTelegramAuth(user)"
+      data-request-access="write"></script>
+    <small>* ویجت لاگین تلگرام فقط روی دامنه‌ای کار می‌کند که در BotFather با دستور /setdomain ثبت شده باشد.</small>
+  </div>
+
+  <div id="app" style="display:none">
+    <div class="card">
+      <div>موجودی کیف پول</div>
+      <div class="balance"><span id="balance">-</span> سکه</div>
+    </div>
+
+    <div class="card">
+      <h3>مسابقات</h3>
+      <div id="matches">در حال بارگذاری...</div>
+      <button onclick="loadMatches()">به‌روزرسانی لیست</button>
+    </div>
+
+    <div class="card">
+      <h3>ایجاد شرط جدید</h3>
+      <form id="bet-form">
+        <input type="number" id="match-id" placeholder="شناسه مسابقه (Match ID)" required>
+        <select id="choice">
+          <option value="team_a">برد تیم A</option>
+          <option value="team_b">برد تیم B</option>
+          <option value="draw">مساوی</option>
+        </select>
+        <input type="number" id="stake" placeholder="مبلغ شرط (سکه)" required>
+        <button type="submit">ایجاد شرط</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3>پیوستن به شرط دوستم</h3>
+      <form id="join-form">
+        <input type="number" id="join-bet-id" placeholder="شناسه شرط (Bet ID)" required>
+        <select id="join-choice">
+          <option value="team_a">برد تیم A</option>
+          <option value="team_b">برد تیم B</option>
+          <option value="draw">مساوی</option>
+        </select>
+        <input type="number" id="join-stake" placeholder="مبلغ شرط (سکه)" required>
+        <button type="submit">پیوستن</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3>شرط‌های من</h3>
+      <div id="my-bets">-</div>
+      <button onclick="loadMyBets()">به‌روزرسانی</button>
+    </div>
+  </div>
+
+<script>
+// آدرس API - چون این فایل از همون سرور FastAPI سرو می‌شه، خودکار درست تشخیص می‌ده
+const API_BASE = window.location.origin;
+let token = null;
+
+function onTelegramAuth(user) {
+  fetch(`${API_BASE}/auth/telegram-login`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(user)
+  })
+  .then(r => {
+    if (!r.ok) throw new Error("ورود ناموفق بود");
+    return r.json();
+  })
+  .then(data => {
+    token = data.access_token;
+    document.getElementById("login-box").style.display = "none";
+    document.getElementById("app").style.display = "block";
+    document.getElementById("balance").innerText = data.balance;
+    loadMatches();
+    loadMyBets();
+  })
+  .catch(err => alert(err.message));
+}
+
+function authHeaders() {
+  return { "Content-Type": "application/json", "Authorization": `Bearer ${token}` };
+}
+
+function loadMatches() {
+  fetch(`${API_BASE}/matches/`)
+    .then(r => r.json())
+    .then(matches => {
+      const box = document.getElementById("matches");
+      if (!matches.length) { box.innerHTML = "<small>هنوز مسابقه‌ای ثبت نشده</small>"; return; }
+      box.innerHTML = matches.map(m => `
+        <div class="match-row">
+          <span>#${m.id} ${m.team_a} 🆚 ${m.team_b}</span>
+          <span>${m.status}${m.result ? " | نتیجه: " + m.result : ""}</span>
+        </div>
+      `).join("");
+    });
+}
+
+function loadMyBets() {
+  if (!token) return;
+  fetch(`${API_BASE}/bets/mine`, { headers: authHeaders() })
+    .then(r => r.json())
+    .then(bets => {
+      const box = document.getElementById("my-bets");
+      if (!bets.length) { box.innerHTML = "<small>هنوز در شرطی شرکت نکرده‌ای</small>"; return; }
+      box.innerHTML = bets.map(b => `
+        <div class="match-row">
+          <span>شرط #${b.id} (مسابقه #${b.match_id})</span>
+          <span>${b.status}</span>
+        </div>
+      `).join("");
+    });
+}
+
+document.getElementById("bet-form").addEventListener("submit", function (e) {
+  e.preventDefault();
+  fetch(`${API_BASE}/bets/`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({
+      match_id: parseInt(document.getElementById("match-id").value),
+      choice: document.getElementById("choice").value,
+      stake_amount: parseInt(document.getElementById("stake").value)
+    })
+  })
+  .then(r => r.json())
+  .then(data => { alert("شرط ایجاد شد: #" + data.id); loadMyBets(); })
+  .catch(() => alert("خطا در ایجاد شرط"));
+});
+
+document.getElementById("join-form").addEventListener("submit", function (e) {
+  e.preventDefault();
+  const betId = document.getElementById("join-bet-id").value;
+  fetch(`${API_BASE}/bets/${betId}/join`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({
+      choice: document.getElementById("join-choice").value,
+      stake_amount: parseInt(document.getElementById("join-stake").value)
+    })
+  })
+  .then(r => r.json())
+  .then(data => { alert("با موفقیت به شرط پیوستی"); loadMyBets(); })
+  .catch(() => alert("خطا در پیوستن به شرط"));
+});
+</script>
+</body>
+</html>

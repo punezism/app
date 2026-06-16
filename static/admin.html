@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>پنل مدیریت - تست</title>
+<style>
+  body { font-family: Tahoma, Arial, sans-serif; background:#0f1115; color:#eee; max-width:480px; margin:0 auto; padding:16px; }
+  .card { background:#1b1e26; border-radius:10px; padding:14px; margin-bottom:14px; }
+  input, select, button { width:100%; padding:10px; margin:6px 0; border-radius:6px; border:1px solid #333; background:#11131a; color:#eee; box-sizing:border-box; }
+  button { background:#e0463f; border:none; cursor:pointer; font-weight:bold; }
+  .match-row { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #2a2d36; }
+</style>
+</head>
+<body>
+
+  <h2>🛠 پنل مدیریت (تست)</h2>
+
+  <div id="login-box" class="card">
+    <p>با اکانت تلگرامی که در ADMIN_TELEGRAM_IDS هست وارد شو:</p>
+    <script async src="https://telegram.org/js/telegram-widget.js?22"
+      data-telegram-login="YOUR_BOT_USERNAME"
+      data-size="large"
+      data-onauth="onTelegramAuth(user)"
+      data-request-access="write"></script>
+  </div>
+
+  <div id="app" style="display:none">
+    <div class="card">
+      <h3>افزودن مسابقه جدید</h3>
+      <form id="match-form">
+        <input type="text" id="team-a" placeholder="تیم A" required>
+        <input type="text" id="team-b" placeholder="تیم B" required>
+        <input type="text" id="group-name" placeholder="گروه (مثلاً Group A) - اختیاری">
+        <input type="datetime-local" id="start-time" required>
+        <button type="submit">افزودن مسابقه</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3>لیست مسابقات و ثبت نتیجه</h3>
+      <div id="matches">در حال بارگذاری...</div>
+      <button onclick="loadMatches()" style="background:#2f6fed">به‌روزرسانی</button>
+    </div>
+
+    <div class="card">
+      <h3>هدیه‌ی سکه به کاربر</h3>
+      <form id="grant-form">
+        <input type="number" id="grant-user-id" placeholder="شناسه عددی کاربر (User ID)" required>
+        <input type="number" id="grant-amount" placeholder="مقدار سکه" required>
+        <input type="text" id="grant-note" placeholder="یادداشت - اختیاری">
+        <button type="submit" style="background:#16a34a">واریز سکه</button>
+      </form>
+    </div>
+  </div>
+
+<script>
+const API_BASE = window.location.origin;
+let token = null;
+
+function onTelegramAuth(user) {
+  fetch(`${API_BASE}/auth/telegram-login`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(user)
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (!data.is_admin) { alert("این اکانت دسترسی ادمین ندارد"); return; }
+    token = data.access_token;
+    document.getElementById("login-box").style.display = "none";
+    document.getElementById("app").style.display = "block";
+    loadMatches();
+  });
+}
+
+function authHeaders() {
+  return { "Content-Type": "application/json", "Authorization": `Bearer ${token}` };
+}
+
+function loadMatches() {
+  fetch(`${API_BASE}/matches/`)
+    .then(r => r.json())
+    .then(matches => {
+      const box = document.getElementById("matches");
+      if (!matches.length) { box.innerHTML = "هنوز مسابقه‌ای ثبت نشده"; return; }
+      box.innerHTML = matches.map(m => `
+        <div class="match-row">
+          <span>#${m.id} ${m.team_a} 🆚 ${m.team_b} (${m.status})</span>
+        </div>
+        ${m.status === "scheduled" ? `
+        <div style="display:flex; gap:6px; margin-bottom:8px;">
+          <select id="result-${m.id}" style="flex:2">
+            <option value="team_a">برد ${m.team_a}</option>
+            <option value="team_b">برد ${m.team_b}</option>
+            <option value="draw">مساوی</option>
+          </select>
+          <button style="flex:1; background:#2f6fed" onclick="setResult(${m.id})">ثبت نتیجه</button>
+        </div>` : ""}
+      `).join("");
+    });
+}
+
+function setResult(matchId) {
+  const result = document.getElementById(`result-${matchId}`).value;
+  fetch(`${API_BASE}/matches/${matchId}/result`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ result })
+  })
+  .then(r => r.json())
+  .then(data => { alert(`نتیجه ثبت شد. تعداد شرط‌های تسویه شده: ${data.settled_bets}`); loadMatches(); })
+  .catch(() => alert("خطا در ثبت نتیجه"));
+}
+
+document.getElementById("match-form").addEventListener("submit", function (e) {
+  e.preventDefault();
+  fetch(`${API_BASE}/matches/`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({
+      team_a: document.getElementById("team-a").value,
+      team_b: document.getElementById("team-b").value,
+      group_name: document.getElementById("group-name").value || null,
+      start_time: document.getElementById("start-time").value
+    })
+  })
+  .then(r => r.json())
+  .then(() => { alert("مسابقه اضافه شد"); loadMatches(); document.getElementById("match-form").reset(); })
+  .catch(() => alert("خطا در افزودن مسابقه"));
+});
+
+document.getElementById("grant-form").addEventListener("submit", function (e) {
+  e.preventDefault();
+  fetch(`${API_BASE}/wallet/admin-grant`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({
+      user_id: parseInt(document.getElementById("grant-user-id").value),
+      amount: parseInt(document.getElementById("grant-amount").value),
+      note: document.getElementById("grant-note").value || null
+    })
+  })
+  .then(r => r.json())
+  .then(data => { alert(`موجودی جدید کاربر: ${data.new_balance}`); document.getElementById("grant-form").reset(); })
+  .catch(() => alert("خطا در واریز سکه"));
+});
+</script>
+</body>
+</html>
